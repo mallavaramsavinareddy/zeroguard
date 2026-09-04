@@ -1,7 +1,7 @@
 import os
 
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 
@@ -16,34 +16,38 @@ TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
 def get_gmail_service():
     creds = None
 
-    # Load existing token
+    # Load existing OAuth token
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(
             TOKEN_FILE,
             SCOPES
         )
 
-    # Authenticate if necessary
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            CREDENTIALS_FILE,
-            SCOPES
+    # If token is valid, use it directly
+    if creds and creds.valid:
+        return build(
+            "gmail",
+            "v1",
+            credentials=creds
         )
 
-        creds = flow.run_local_server(
-            host="localhost",
-            port=8080,
-            open_browser=True
-        )
+    # Refresh expired token automatically
+    if creds and creds.expired and creds.refresh_token:
+        from google.auth.transport.requests import Request
+
+        creds.refresh(Request())
 
         with open(TOKEN_FILE, "w") as token:
             token.write(creds.to_json())
 
-    # Create Gmail API service
-    service = build(
-        "gmail",
-        "v1",
-        credentials=creds
-    )
+        return build(
+            "gmail",
+            "v1",
+            credentials=creds
+        )
 
-    return service
+    # No usable token
+    raise RuntimeError(
+        "Gmail authentication is not configured on the server. "
+        "Please provide a valid token.json."
+    )
