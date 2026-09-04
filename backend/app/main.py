@@ -26,11 +26,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -205,13 +202,6 @@ def emails():
 
             elif risk_level == "HIGH":
 
-                # =================================================
-                # HIGH FROM SPAM
-                #
-                # Gmail already considers the message suspicious.
-                # ZeroGuard agrees and keeps it isolated.
-                # =================================================
-
                 if mailbox == "SPAM":
 
                     try:
@@ -238,12 +228,6 @@ def emails():
 
                         email["security"]["quarantined"] = False
 
-                # =================================================
-                # HIGH FROM INBOX
-                #
-                # Keep in Inbox for manual review.
-                # =================================================
-
                 else:
 
                     email["security"]["quarantine"] = {
@@ -262,12 +246,6 @@ def emails():
             # ----------------------------------------------------
 
             elif risk_level == "MEDIUM":
-
-                # =================================================
-                # MEDIUM FROM SPAM
-                #
-                # ZeroGuard considers it safe enough to restore.
-                # =================================================
 
                 if mailbox == "SPAM":
 
@@ -304,10 +282,6 @@ def emails():
 
                         email["security"]["quarantined"] = False
 
-                # =================================================
-                # MEDIUM FROM INBOX
-                # =================================================
-
                 else:
 
                     email["security"]["quarantine"] = {
@@ -325,12 +299,6 @@ def emails():
             # ----------------------------------------------------
 
             else:
-
-                # =================================================
-                # LOW FROM SPAM
-                #
-                # ZeroGuard considers it safe and restores it.
-                # =================================================
 
                 if mailbox == "SPAM":
 
@@ -366,10 +334,6 @@ def emails():
                         }
 
                         email["security"]["quarantined"] = False
-
-                # =================================================
-                # LOW FROM INBOX
-                # =================================================
 
                 else:
 
