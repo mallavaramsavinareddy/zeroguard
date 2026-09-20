@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import './App.css'
 
@@ -61,14 +60,18 @@ function App() {
     setOauthLoading(true)
 
     const currentOrigin = window.location.origin
+
+    // GitHub Pages needs the /zeroguard/ path
+    const frontendUrl = `${currentOrigin}/zeroguard/`
+
     const loginUrl =
       `${API_URL}/auth/google/login?frontend_url=${encodeURIComponent(
-        currentOrigin
+        frontendUrl
       )}`
 
     console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
       api: API_URL,
-      frontendOrigin: currentOrigin,
+      frontendUrl: frontendUrl,
       loginEndpoint: `${API_URL}/auth/google/login`
     })
 
@@ -97,11 +100,15 @@ function App() {
         })
       }
     } catch (err) {
-      console.warn('[ZeroGuard] Previous session disconnect failed:', err)
+      console.warn(
+        '[ZeroGuard] Previous session disconnect failed:',
+        err
+      )
     }
 
     localStorage.removeItem('zg_session_token')
     localStorage.removeItem('zg_user_email')
+
     setSessionToken('')
     setUserEmail('')
     setConnected(false)
@@ -109,19 +116,10 @@ function App() {
     setQuarantined([])
     setExpandedEmail(null)
 
-   const currentOrigin = window.location.origin
-const frontendUrl = `${currentOrigin}/zeroguard/`
 
-const loginUrl =
-  `${API_URL}/auth/google/login?frontend_url=${encodeURIComponent(
-    frontendUrl
-  )}`
-
-console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
-  api: API_URL,
-  frontendUrl: frontendUrl,
-  loginEndpoint: `${API_URL}/auth/google/login`
-})
+    // Start a completely fresh Google OAuth flow
+    startGoogleOAuth()
+  }
 
   // ============================================================
   // DISCONNECT EMAIL
@@ -417,7 +415,6 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         '[ZeroGuard] OAuth callback successful. Saving session.'
       )
 
-      // Save session token
       localStorage.setItem(
         'zg_session_token',
         tokenFromUrl
@@ -427,7 +424,6 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         tokenFromUrl
       )
 
-      // Save email
       if (emailFromUrl) {
         const decodedEmail =
           decodeURIComponent(
@@ -444,7 +440,6 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         )
       }
 
-      // Immediately show connected state
       setConnected(true)
       setOauthLoading(false)
 
@@ -458,14 +453,12 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         setSuccessMessage('')
       }, 5000)
 
-      // Remove OAuth parameters from URL
       window.history.replaceState(
         {},
         document.title,
         window.location.pathname
       )
 
-      // Verify session and load emails
       loadDashboardData(
         tokenFromUrl
       )
@@ -493,6 +486,7 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
 
       localStorage.removeItem('zg_session_token')
       localStorage.removeItem('zg_user_email')
+
       setSessionToken('')
       setUserEmail('')
 
@@ -626,28 +620,41 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
   const SAMPLE_MESSAGES = [
     {
       label: 'WhatsApp OTP Scam',
-      message: 'Urgent: I accidentally sent my 6-digit WhatsApp registration code to your number. Please send it back immediately so my account is not deactivated!',
+      message:
+        'Urgent: I accidentally sent my 6-digit WhatsApp registration code to your number. Please send it back immediately so my account is not deactivated!',
       url: ''
     },
     {
       label: 'Fake PayPal Alert',
-      message: 'Your PayPal account has been restricted due to suspicious login attempts. Verify your identity within 24 hours to prevent permanent suspension.',
-      url: 'http://paypa1-security-check.xyz/login'
+      message:
+        'Your PayPal account has been restricted due to suspicious login attempts. Verify your identity within 24 hours to prevent permanent suspension.',
+      url:
+        'http://paypa1-security-check.xyz/login'
     },
     {
       label: 'Safe Meeting Note',
-      message: 'Hey Alex, just wanted to check if we are still meeting for coffee today at 3 PM at the corner cafe? Let me know!',
+      message:
+        'Hey Alex, just wanted to check if we are still meeting for coffee today at 3 PM at the corner cafe? Let me know!',
       url: ''
     }
   ]
 
   const handleAnalyzeMessage = async (e) => {
     if (e) e.preventDefault()
-    const trimmedMessage = messageInput.trim()
-    const trimmedUrl = urlInput.trim()
 
-    if (!trimmedMessage && !trimmedUrl) {
-      setManualError('Please enter a message or URL to analyze.')
+    const trimmedMessage =
+      messageInput.trim()
+
+    const trimmedUrl =
+      urlInput.trim()
+
+    if (
+      !trimmedMessage &&
+      !trimmedUrl
+    ) {
+      setManualError(
+        'Please enter a message or URL to analyze.'
+      )
       return
     }
 
@@ -655,36 +662,53 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
     setManualError('')
 
     try {
-      const response = await fetch(`${API_URL}/analyze-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: trimmedMessage,
-          url: trimmedUrl
-        })
-      })
+      const response =
+        await fetch(
+          `${API_URL}/analyze-message`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                'application/json'
+            },
+            body: JSON.stringify({
+              message:
+                trimmedMessage,
+              url:
+                trimmedUrl
+            })
+          }
+        )
 
-      const data = await response.json()
+      const data =
+        await response.json()
 
-      if (!response.ok || data.status === 'error') {
-        throw new Error(data.message || 'Analysis failed. Please check your backend.')
+      if (
+        !response.ok ||
+        data.status === 'error'
+      ) {
+        throw new Error(
+          data.message ||
+          'Analysis failed. Please check your backend.'
+        )
       }
 
-      // ------------------------------------------------------------
-      // NORMALIZE MANUAL ANALYSIS RESULT
-      // Always derive the displayed severity/recommendation from the
-      // numeric risk score so the UI cannot show GREEN/SAFE for 100/100.
-      // ------------------------------------------------------------
-      const rawScore = Number(
-        data.risk_score ??
-        data.security?.risk_score ??
-        data.result?.risk_score ??
-        0
-      )
+      const rawScore =
+        Number(
+          data.risk_score ??
+          data.security?.risk_score ??
+          data.result?.risk_score ??
+          0
+        )
 
-      const normalizedScore = Math.max(0, Math.min(100, rawScore))
+      const normalizedScore =
+        Math.max(
+          0,
+          Math.min(
+            100,
+            rawScore
+          )
+        )
 
       const normalizedSeverity =
         normalizedScore >= 70
@@ -704,7 +728,6 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
           ? 'Warn User'
           : 'Allow Email'
 
-      // Accept all common backend field names.
       let normalizedReasons =
         data.reasons ??
         data.detection_reasons ??
@@ -713,30 +736,52 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         data.result?.reasons ??
         []
 
-      if (!Array.isArray(normalizedReasons)) {
-        normalizedReasons = normalizedReasons
-          ? [String(normalizedReasons)]
-          : []
+      if (
+        !Array.isArray(
+          normalizedReasons
+        )
+      ) {
+        normalizedReasons =
+          normalizedReasons
+            ? [
+                String(
+                  normalizedReasons
+                )
+              ]
+            : []
       }
 
-      // Never show a "clean" message when the score is actually a threat.
-      if (normalizedReasons.length === 0 && normalizedScore >= 70) {
+      if (
+        normalizedReasons.length ===
+          0 &&
+        normalizedScore >= 70
+      ) {
         normalizedReasons = [
           'Critical threat indicators detected.',
           'The message contains suspicious or deceptive content.',
           ...(trimmedUrl
-            ? ['A target URL was supplied for security analysis.']
+            ? [
+                'A target URL was supplied for security analysis.'
+              ]
             : [])
         ]
       }
 
-      if (normalizedReasons.length === 0 && normalizedScore >= 50) {
+      if (
+        normalizedReasons.length ===
+          0 &&
+        normalizedScore >= 50
+      ) {
         normalizedReasons = [
           'High-risk indicators detected by the ZeroGuard security engine.'
         ]
       }
 
-      if (normalizedReasons.length === 0 && normalizedScore >= 30) {
+      if (
+        normalizedReasons.length ===
+          0 &&
+        normalizedScore >= 30
+      ) {
         normalizedReasons = [
           'Suspicious indicators detected; user caution is recommended.'
         ]
@@ -744,14 +789,25 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
 
       setManualResult({
         ...data,
-        risk_score: normalizedScore,
-        severity: normalizedSeverity,
-        recommendation: normalizedRecommendation,
-        reasons: normalizedReasons
+        risk_score:
+          normalizedScore,
+        severity:
+          normalizedSeverity,
+        recommendation:
+          normalizedRecommendation,
+        reasons:
+          normalizedReasons
       })
     } catch (err) {
-      console.error('[ZeroGuard] Manual analysis error:', err)
-      setManualError(err.message || 'Unable to connect to ZeroGuard analysis engine.')
+      console.error(
+        '[ZeroGuard] Manual analysis error:',
+        err
+      )
+
+      setManualError(
+        err.message ||
+        'Unable to connect to ZeroGuard analysis engine.'
+      )
     } finally {
       setManualLoading(false)
     }
@@ -883,7 +939,9 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
 
       <button
         className="connect-email-btn large-cta"
-        onClick={handleConnectEmail}
+        onClick={
+          handleConnectEmail
+        }
       >
         <span className="google-icon-badge">
           G
@@ -1259,8 +1317,15 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
   // MANUAL PHISHING CHECK CARD / PAGE
   // ============================================================
 
-  const renderManualCheckCard = (isFullPage = false) => {
-    const manualScore = Number(manualResult?.risk_score ?? 0)
+  const renderManualCheckCard = (
+    isFullPage = false
+  ) => {
+    const manualScore =
+      Number(
+        manualResult?.risk_score ??
+        0
+      )
+
     const severityLower =
       manualScore >= 70
         ? 'critical'
@@ -1271,12 +1336,19 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         : 'low'
 
     return (
-      <section className={`manual-check-section ${isFullPage ? 'full-page' : ''}`}>
+      <section
+        className={`manual-check-section ${
+          isFullPage
+            ? 'full-page'
+            : ''
+        }`}
+      >
         <div className="section-header">
           <div>
             <h2>
               🔍 Check a Suspicious Message
             </h2>
+
             <p>
               Paste any message from WhatsApp, LinkedIn, SMS, Instagram, or an untrusted URL to analyze phishing and scam indicators.
             </p>
@@ -1285,7 +1357,9 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
           {manualResult && (
             <button
               className="manual-clear-btn"
-              onClick={handleClearManual}
+              onClick={
+                handleClearManual
+              }
             >
               Clear Results
             </button>
@@ -1293,52 +1367,95 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
         </div>
 
         <div className="manual-check-card">
-          <form onSubmit={handleAnalyzeMessage} className="manual-form">
+          <form
+            onSubmit={
+              handleAnalyzeMessage
+            }
+            className="manual-form"
+          >
             <div className="form-group">
               <label htmlFor="manual-message-input">
                 Suspicious Message Content
               </label>
+
               <textarea
                 id="manual-message-input"
                 className="manual-textarea"
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
+                value={
+                  messageInput
+                }
+                onChange={(e) =>
+                  setMessageInput(
+                    e.target.value
+                  )
+                }
                 placeholder="Paste suspicious message here (e.g. SMS, WhatsApp, LinkedIn message, or email body)..."
-                rows={isFullPage ? 6 : 4}
+                rows={
+                  isFullPage
+                    ? 6
+                    : 4
+                }
               />
             </div>
 
             <div className="form-group">
               <label htmlFor="manual-url-input">
-                Optional Target URL <span className="label-subtext">(or URLs will be auto-detected from message)</span>
+                Optional Target URL{' '}
+                <span className="label-subtext">
+                  (or URLs will be auto-detected from message)
+                </span>
               </label>
+
               <input
                 id="manual-url-input"
                 type="text"
                 className="manual-url-input"
                 value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
+                onChange={(e) =>
+                  setUrlInput(
+                    e.target.value
+                  )
+                }
                 placeholder="e.g. http://paypa1-security-check.xyz/login or bit.ly/3x..."
               />
             </div>
 
             <div className="manual-sample-chips">
-              <span className="chips-label">Try a sample:</span>
-              {SAMPLE_MESSAGES.map((sample, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className="sample-chip"
-                  onClick={() => {
-                    setMessageInput(sample.message)
-                    setUrlInput(sample.url)
-                    setManualResult(null)
-                    setManualError('')
-                  }}
-                >
-                  {sample.label}
-                </button>
-              ))}
+              <span className="chips-label">
+                Try a sample:
+              </span>
+
+              {SAMPLE_MESSAGES.map(
+                (
+                  sample,
+                  idx
+                ) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className="sample-chip"
+                    onClick={() => {
+                      setMessageInput(
+                        sample.message
+                      )
+
+                      setUrlInput(
+                        sample.url
+                      )
+
+                      setManualResult(
+                        null
+                      )
+
+                      setManualError(
+                        ''
+                      )
+                    }}
+                  >
+                    {sample.label}
+                  </button>
+                )
+              )}
             </div>
 
             {manualError && (
@@ -1351,23 +1468,38 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
               <button
                 type="submit"
                 className="analyze-btn"
-                disabled={manualLoading || (!messageInput.trim() && !urlInput.trim())}
+                disabled={
+                  manualLoading ||
+                  (!messageInput.trim() &&
+                    !urlInput.trim())
+                }
               >
                 {manualLoading ? (
                   <>
-                    <span className="spinner-icon">↻</span> Analyzing Threat...
+                    <span className="spinner-icon">
+                      ↻
+                    </span>{' '}
+                    Analyzing Threat...
                   </>
                 ) : (
-                  <>🛡️ Analyze Message</>
+                  <>
+                    🛡️ Analyze Message
+                  </>
                 )}
               </button>
 
-              {(messageInput || urlInput || manualResult) && (
+              {(messageInput ||
+                urlInput ||
+                manualResult) && (
                 <button
                   type="button"
                   className="manual-reset-btn"
-                  onClick={handleClearManual}
-                  disabled={manualLoading}
+                  onClick={
+                    handleClearManual
+                  }
+                  disabled={
+                    manualLoading
+                  }
                 >
                   Reset
                 </button>
@@ -1376,84 +1508,155 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
           </form>
 
           {manualResult && (
-            <div className={`manual-result-panel ${severityLower}`}>
+            <div
+              className={`manual-result-panel ${severityLower}`}
+            >
               <div className="manual-result-header">
                 <div className="manual-result-title">
-                  <span className="analysis-tag">SECURITY SCAN RESULT</span>
-                  <h3>Threat Evaluation</h3>
+                  <span className="analysis-tag">
+                    SECURITY SCAN RESULT
+                  </span>
+
+                  <h3>
+                    Threat Evaluation
+                  </h3>
                 </div>
 
                 <div className="manual-result-badges">
-                  <span className={`severity-badge ${severityLower}`}>
-                    {manualScore >= 70
+                  <span
+                    className={`severity-badge ${severityLower}`}
+                  >
+                    {manualScore >=
+                    70
                       ? 'CRITICAL'
-                      : manualScore >= 50
+                      : manualScore >=
+                        50
                       ? 'HIGH'
-                      : manualScore >= 30
+                      : manualScore >=
+                        30
                       ? 'MEDIUM'
                       : 'LOW'}
                   </span>
+
                   <div className="manual-score-badge">
-                    <span>Risk Score</span>
+                    <span>
+                      Risk Score
+                    </span>
+
                     <strong>
-                      {manualResult.risk_score}
-                      <small>/100</small>
+                      {
+                        manualResult.risk_score
+                      }
+                      <small>
+                        /100
+                      </small>
                     </strong>
                   </div>
                 </div>
               </div>
 
               <div className="manual-recommendation-card">
-                <div className="rec-icon">🛡️</div>
+                <div className="rec-icon">
+                  🛡️
+                </div>
+
                 <div className="rec-content">
-                  <strong>Security Recommendation</strong>
+                  <strong>
+                    Security Recommendation
+                  </strong>
+
                   <p>
-                    {manualScore >= 70
+                    {manualScore >=
+                    70
                       ? 'Quarantine / Isolate Instantly'
-                      : manualScore >= 50
+                      : manualScore >=
+                        50
                       ? 'Quarantine'
-                      : manualScore >= 30
+                      : manualScore >=
+                        30
                       ? 'Warn User'
                       : 'Allow Email'}
                   </p>
                 </div>
               </div>
 
-              {manualResult.detected_urls?.length > 0 && (
+              {manualResult.detected_urls?.length >
+                0 && (
                 <div className="manual-urls-section">
                   <div className="urls-heading">
-                    <strong>🔗 Detected Links ({manualResult.detected_urls.length})</strong>
-                    <span className="safe-notice">Untrusted links are not opened automatically</span>
+                    <strong>
+                      🔗 Detected Links (
+                      {
+                        manualResult
+                          .detected_urls
+                          .length
+                      }
+                      )
+                    </strong>
+
+                    <span className="safe-notice">
+                      Untrusted links are not opened automatically
+                    </span>
                   </div>
+
                   <div className="urls-list">
-                    {manualResult.detected_urls.map((u, i) => (
-                      <div key={i} className="detected-url-item">
-                        <span className="url-badge-icon">⚠️</span>
-                        <code className="url-text">{u}</code>
-                      </div>
-                    ))}
+                    {manualResult.detected_urls.map(
+                      (u, i) => (
+                        <div
+                          key={i}
+                          className="detected-url-item"
+                        >
+                          <span className="url-badge-icon">
+                            ⚠️
+                          </span>
+
+                          <code className="url-text">
+                            {u}
+                          </code>
+                        </div>
+                      )
+                    )}
                   </div>
                 </div>
               )}
 
               <div className="manual-reasons-section">
-                <h4>⚠️ Detection Reasons & Indicators</h4>
-                {manualResult.reasons?.length > 0 ? (
+                <h4>
+                  ⚠️ Detection Reasons & Indicators
+                </h4>
+
+                {manualResult.reasons?.length >
+                0 ? (
                   <ul className="manual-reasons-list">
-                    {manualResult.reasons.map((reason, idx) => (
-                      <li key={idx}>
-                        <span className="reason-bullet">•</span>
-                        <span>{reason}</span>
-                      </li>
-                    ))}
+                    {manualResult.reasons.map(
+                      (
+                        reason,
+                        idx
+                      ) => (
+                        <li
+                          key={idx}
+                        >
+                          <span className="reason-bullet">
+                            •
+                          </span>
+
+                          <span>
+                            {reason}
+                          </span>
+                        </li>
+                      )
+                    )}
                   </ul>
                 ) : (
                   <p className="clean-reason">
-                    {manualScore >= 70
+                    {manualScore >=
+                    70
                       ? '⚠️ Critical threat indicators detected.'
-                      : manualScore >= 50
+                      : manualScore >=
+                        50
                       ? '⚠️ High-risk indicators detected.'
-                      : manualScore >= 30
+                      : manualScore >=
+                        30
                       ? '⚠️ Suspicious indicators detected.'
                       : '✓ No suspicious phishing indicators detected.'}
                   </p>
@@ -1463,7 +1666,9 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
               {manualResult.ai_analysis && (
                 <div className="manual-ai-footer">
                   <span className="ai-tag">
-                    {manualResult.ai_analysis.available
+                    {manualResult
+                      .ai_analysis
+                      .available
                       ? '✓ Verified with Featherless AI IntentShield'
                       : '⚙️ ZeroGuard Rule-Based Engine'}
                   </span>
@@ -2128,8 +2333,12 @@ console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
 
                 <button
                   className="switch-btn"
-                  onClick={handleSwitchAccount}
-                  disabled={oauthLoading}
+                  onClick={
+                    handleSwitchAccount
+                  }
+                  disabled={
+                    oauthLoading
+                  }
                   title="Connect a different Gmail account"
                 >
                   Switch
