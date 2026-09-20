@@ -32,11 +32,13 @@ jobs:
         working-directory: frontend
         run: npm install
 
-      - name: Build React app
-        working-directory: frontend
-        env:
+       - name: Build React app
+         working-directory: frontend
+         env:
           VITE_API_URL: https://zeroguard-e7d6.onrender.com
-        run: npm run build
+         run: |
+          chmod +x node_modules/.bin/vite
+          npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
