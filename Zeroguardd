@@ -22,13 +22,15 @@ from .user_store import (
     delete_session
 )
 
+from pydantic import BaseModel
+
 from .gmail_reader import get_latest_emails
-from .security_analyzer import analyze_email
+from .security_analyzer import analyze_email, analyze_message
+from .attachment_analyzer import analyze_attachments
 
 from .gmail_quarantine import (
     quarantine_email,
-    move_to_inbox,
-    release_from_quarantine
+    move_to_inbox
 )
 
 load_dotenv()
@@ -107,6 +109,55 @@ def home():
         "status": "active",
         "version": "2.0.0"
     }
+
+
+# ============================================================
+# MANUAL PHISHING CHECK ENDPOINT
+# ============================================================
+
+class MessageAnalysisRequest(BaseModel):
+    message: str = ""
+    url: str = ""
+
+
+@app.post("/analyze-message")
+def analyze_message_endpoint(payload: MessageAnalysisRequest):
+    """
+    Analyze a manually pasted message and/or URL from SMS, WhatsApp,
+    LinkedIn, Instagram, or direct message for phishing threats.
+    """
+    message = (payload.message or "").strip()
+    url = (payload.url or "").strip()
+
+    if not message and not url:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "Please provide a message or URL to analyze."
+            }
+        )
+
+    try:
+        result = analyze_message(message=message, url=url)
+        return {
+            "status": "success",
+            "risk_score": result["risk_score"],
+            "severity": result["severity"],
+            "reasons": result["reasons"],
+            "detected_urls": result["detected_urls"],
+            "recommendation": result["recommendation"],
+            "ai_analysis": result.get("ai_analysis", {})
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Failed to analyze message: {str(e)}"
+            }
+        )
 
 
 # ============================================================
@@ -554,6 +605,82 @@ def emails(request: Request):
                 links,
                 link_details=link_details
             )
+
+            # ------------------------------------------------
+            # ATTACHMENT SECURITY ANALYSIS
+            # ------------------------------------------------
+            # This is additive to the existing email analysis.
+            # If there are no attachments, the existing email
+            # risk and behaviour remain unchanged.
+
+            attachment_results = analyze_attachments(
+                email.get("attachments", [])
+            )
+
+            email["attachments"] = attachment_results
+
+            # ------------------------------------------------
+            # Merge attachment risk with existing email risk.
+            # Attachment risk can increase the final risk, but
+            # it can never reduce the existing email risk.
+            # ------------------------------------------------
+
+            risk_order = {
+                "LOW": 0,
+                "MEDIUM": 1,
+                "HIGH": 2,
+                "CRITICAL": 3
+            }
+
+            email_risk = analysis.get(
+                "risk_level",
+                "LOW"
+            )
+
+            attachment_risk = attachment_results.get(
+                "risk_level",
+                "LOW"
+            )
+
+            if risk_order.get(
+                attachment_risk,
+                0
+            ) > risk_order.get(
+                email_risk,
+                0
+            ):
+
+                analysis["risk_level"] = attachment_risk
+
+                analysis["risk_score"] = max(
+                    analysis.get(
+                        "risk_score",
+                        0
+                    ),
+                    attachment_results.get(
+                        "risk_score",
+                        0
+                    )
+                )
+
+                analysis.setdefault(
+                    "reasons",
+                    []
+                ).append(
+                    "Suspicious attachment detected."
+                )
+
+                if attachment_risk in (
+                    "HIGH",
+                    "CRITICAL"
+                ):
+
+                    analysis.setdefault(
+                        "intent",
+                        {}
+                    )["recommended_defense"] = (
+                        "Quarantine"
+                    )
 
             email["security"] = analysis
 
@@ -1020,59 +1147,13 @@ def get_quarantined_emails(
                     links
                 )
 
-                current_risk_level = security.get(
-                    "risk_level",
-                    "LOW"
-                )
-
-                # ------------------------------------------------
-                # CLEAN UP OLD FALSE-POSITIVE QUARANTINE EMAILS
-                # ------------------------------------------------
-                # Only HIGH and CRITICAL emails should remain in
-                # ZeroGuard quarantine. If an email currently
-                # analyzes as LOW or MEDIUM, restore it to Inbox
-                # and remove the ZeroGuard quarantine label.
-
-                if current_risk_level not in (
-                    "HIGH",
-                    "CRITICAL"
-                ):
-
-                    try:
-
-                        release_result = release_from_quarantine(
-                            message_id,
-                            service=service
-                        )
-
-                        print(
-                            f"Released email {message_id} from "
-                            f"ZeroGuard quarantine "
-                            f"(risk={current_risk_level})"
-                        )
-
-                    except Exception as release_error:
-
-                        print(
-                            f"Warning: Could not release "
-                            f"{message_id} from quarantine: "
-                            f"{release_error}"
-                        )
-
-                    continue
-
-                # ------------------------------------------------
-                # ONLY HIGH / CRITICAL STAY IN QUARANTINE
-                # ------------------------------------------------
-
                 security["quarantined"] = True
 
                 security["quarantine"] = {
                     "status": "quarantined",
                     "reason": (
-                        "Email is stored in ZeroGuard quarantine "
-                        f"because its current risk level is "
-                        f"{current_risk_level}."
+                        "Email is stored in "
+                        "ZeroGuard quarantine"
                     )
                 }
 
@@ -1109,91 +1190,6 @@ def get_quarantined_emails(
             status_code=500,
             content={
                 "status": "error",
-                "error": str(e)
-            }
-        )
-
-
-
-# ============================================================
-# MANUAL MESSAGE ANALYSIS
-# ============================================================
-
-@app.post("/analyze-message")
-async def analyze_message(request: Request):
-    """
-    Analyze a message pasted manually from WhatsApp, LinkedIn,
-    SMS, Instagram, email, or another untrusted source.
-    """
-
-    try:
-        data = await request.json()
-
-        message = (
-            data.get("message")
-            or data.get("content")
-            or data.get("text")
-            or ""
-        ).strip()
-
-        target_url = (
-            data.get("url")
-            or data.get("target_url")
-            or ""
-        ).strip()
-
-        if not message and not target_url:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "message": "Message content or target URL is required."
-                }
-            )
-
-        # Extract URLs from the pasted message and merge with
-        # the optional URL supplied separately by the user.
-        links = re_extract_urls(message)
-
-        if target_url:
-            if target_url not in links:
-                links.append(target_url)
-
-        # Use the existing ZeroGuard analyzer so the manual
-        # checker follows the same scoring rules as email analysis.
-        analysis = analyze_email(
-            sender="Manual Message",
-            subject="Manual Security Check",
-            body=message,
-            links=links
-        )
-
-        return {
-            "status": "success",
-            "message": "Message analyzed successfully.",
-            "analysis": analysis,
-            "security": analysis,
-            "risk_score": analysis.get("risk_score", 0),
-            "risk_level": analysis.get("risk_level", "LOW"),
-            "recommended_defense": analysis.get(
-                "recommended_defense",
-                "Allow"
-            ),
-            "links": links
-        }
-
-    except Exception as e:
-        log_trace(
-            f"!!! Manual message analysis failed: "
-            f"{type(e).__name__}: {str(e)}"
-        )
-        traceback.print_exc()
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "message": "Failed to analyze message.",
                 "error": str(e)
             }
         )
