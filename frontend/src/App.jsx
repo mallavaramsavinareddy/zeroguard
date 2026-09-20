@@ -109,15 +109,19 @@ function App() {
     setQuarantined([])
     setExpandedEmail(null)
 
-    const currentOrigin = window.location.origin
-    const loginUrl =
-      `${API_URL}/auth/google/login?frontend_url=${encodeURIComponent(
-        currentOrigin
-      )}`
+   const currentOrigin = window.location.origin
+const frontendUrl = `${currentOrigin}/zeroguard/`
 
-    console.log('[ZeroGuard] Switching Gmail account with a fresh OAuth flow.')
-    window.location.assign(loginUrl)
-  }
+const loginUrl =
+  `${API_URL}/auth/google/login?frontend_url=${encodeURIComponent(
+    frontendUrl
+  )}`
+
+console.log('[ZeroGuard] Starting fresh Google OAuth flow:', {
+  api: API_URL,
+  frontendUrl: frontendUrl,
+  loginEndpoint: `${API_URL}/auth/google/login`
+})
 
   // ============================================================
   // DISCONNECT EMAIL
